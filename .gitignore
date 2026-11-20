@@ -1,9 +1,33 @@
-﻿node_modules/
+﻿# Dependencias de Node
+node_modules/
+
+# Variables de entorno locales (.env.example sí se versiona)
 .env
+.env.*
+!.env.example
+
+# Configuración local de la herramienta
 opencode.json
+
+# Base de datos SQLite local
 *.db
 *.db-shm
 *.db-wal
-backend/**/bin/
-backend/**/obj/
-frontend/dist/
+
+# Artefactos de compilación .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Build y cobertura del frontend
+dist/
+dist-ssr/
+coverage/
+*.local
+
+# Logs y temporales del sistema
+*.log
+.DS_Store
+Thumbs.db
