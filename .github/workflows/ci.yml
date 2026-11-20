@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (.NET 10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Detectar proyecto backend
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=""
+          if [ -d backend ]; then
+            if [ -f backend/Ferreteria.Api.Tests/Ferreteria.Api.Tests.csproj ]; then
+              target="backend/Ferreteria.Api.Tests/Ferreteria.Api.Tests.csproj"
+            elif ls backend/*.sln >/dev/null 2>&1; then
+              target="$(ls backend/*.sln | head -n 1)"
+            elif ls backend/*.csproj >/dev/null 2>&1; then
+              target="$(ls backend/*.csproj | head -n 1)"
+            fi
+          fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          if [ -z "$target" ]; then
+            echo "::notice title=Backend::backend/ aún no existe o no contiene .sln/.csproj. Se omiten restore, build y test."
+          else
+            echo "::notice title=Backend::Proyecto detectado: $target"
+          fi
+
+      - name: Restore
+        if: steps.detect.outputs.target != ''
+        run: dotnet restore "${{ steps.detect.outputs.target }}"
+
+      - name: Build
+        if: steps.detect.outputs.target != ''
+        run: dotnet build "${{ steps.detect.outputs.target }}" --configuration Release --no-restore
+
+      - name: Test
+        if: steps.detect.outputs.target != ''
+        run: dotnet test "${{ steps.detect.outputs.target }}" --configuration Release --no-build --verbosity normal
+
+  frontend:
+    name: Frontend (Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detectar frontend y lockfile
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f frontend/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Frontend::frontend/ aún no existe (sin package.json). Se omiten install, test y build."
+          fi
+          if [ -f frontend/package-lock.json ]; then
+            echo "lock=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "lock=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configurar Node 22 con caché npm
+        if: steps.detect.outputs.exists == 'true' && steps.detect.outputs.lock == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Configurar Node 22 sin caché npm
+        if: steps.detect.outputs.exists != 'true' || steps.detect.outputs.lock != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Detectar scripts de package.json
+        id: scripts
+        if: steps.detect.outputs.exists == 'true'
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const scripts = pkg.scripts || {};
+            const flag = (name) => (scripts[name] ? "true" : "false");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "has_test=" + flag("test") + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "has_build=" + flag("build") + "\n");
+            console.log("script test:", scripts.test || "(no definido)");
+            console.log("script build:", scripts.build || "(no definido)");
+          '
+
+      - name: Instalar dependencias
+        if: steps.detect.outputs.exists == 'true'
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Test
+        if: steps.detect.outputs.exists == 'true' && steps.scripts.outputs.has_test == 'true'
+        working-directory: frontend
+        run: npm test -- --run
+
+      - name: Aviso sin script de test
+        if: steps.detect.outputs.exists == 'true' && steps.scripts.outputs.has_test != 'true'
+        shell: bash
+        run: |
+          echo "::notice title=Frontend::package.json no define script 'test'. Añade Vitest para activar la puerta de calidad."
+
+      - name: Build
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm run build
