@@ -1,0 +1,30 @@
+@host = http://localhost:5148
+@categoriaHerramientas = 1
+
+### Listado paginado (12 por defecto)
+GET {{host}}/api/productos
+Accept: application/json
+
+### Búsqueda por nombre o SKU (ignora mayúsculas y tildes)
+GET {{host}}/api/productos?busqueda=taladro&page=1&pageSize=5
+Accept: application/json
+
+### Filtro por categoría con paginación
+GET {{host}}/api/productos?categoriaId={{categoriaHerramientas}}&page=2&pageSize=3
+Accept: application/json
+
+### Detalle de producto (incluye categoría)
+GET {{host}}/api/productos/7
+Accept: application/json
+
+### Detalle inexistente: 404 en formato ProblemDetails
+GET {{host}}/api/productos/999
+Accept: application/json
+
+### Categorías con conteo de productos
+GET {{host}}/api/categorias
+Accept: application/json
+
+### Tasa oficial USD -> Bs. (DolarAPI con caché y respaldo)
+GET {{host}}/api/tasa
+Accept: application/json
